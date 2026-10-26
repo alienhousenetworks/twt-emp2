@@ -17,7 +17,7 @@
       "fieldname": "provider_message_id",
       "label": "Provider Message ID",
       "fieldtype": "Data",
-      "unique": 1
+      "unique": 0
     },
     {
       "fieldname": "direction",
