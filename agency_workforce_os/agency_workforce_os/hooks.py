@@ -5,3 +5,5 @@ app_description = "Agency collaboration and employee workspace built on ERPNext/
 app_email = "connect@alienhousenetworks.com"
 app_license = "MIT"
 required_apps = ["erpnext"]
+
+after_install = "agency_workforce_os.install.after_install"
