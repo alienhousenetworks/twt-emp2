@@ -57,7 +57,7 @@ class WorkforceApi {
 
   Future<void> logout() async {
     try {
-      await call('frappe.auth.logout');
+      await http.post(Uri.parse(baseUrl + '/api/method/logout'), headers: await headers());
     } catch (_) {}
     await secureStorage.delete(key: 'sid');
     await secureStorage.delete(key: 'csrf_token');
