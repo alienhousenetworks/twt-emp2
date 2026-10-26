@@ -31,8 +31,7 @@ jobs:
           import json
           from pathlib import Path
           root = Path("agency_workforce_os/agency_workforce_os/doctype")
-          files = sorted(root.glob("*/**.json")) + sorted(root.glob("*/*.json"))
-          files = sorted(set(files))
+          files = sorted(root.rglob("*.json"))
           if not files:
               raise SystemExit("No DocType JSON files found")
           for path in files:
@@ -53,8 +52,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - run: npm install
       - run: npm run build
 

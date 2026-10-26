@@ -325,4 +325,4 @@ def get_management_overview():
 @frappe.whitelist()
 def list_leave_types():
     _employee_for_session()
-    return frappe.get_list("Leave Type", filters={"is_active": "Yes"}, fields=["name"], order_by="name asc", limit_page_length=100)
+    return frappe.get_list("Leave Type", fields=["name"], order_by="name asc", limit_page_length=100)
