@@ -232,7 +232,7 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
         if (index == 4) ...[const Text('Employee directory',style:TextStyle(fontWeight:FontWeight.bold)),for(final p in rows) ListTile(leading:const CircleAvatar(child:Icon(Icons.person)),title:Text(p['employee_name']?.toString()??p['name']?.toString()??'Employee'),subtitle:Text((p['department']??'No department').toString()+' · '+(p['designation']??'').toString()),trailing:Text(p['status']?.toString()??''))],
         if (index == 5) ...[
           Text('Request leave',style:Theme.of(context).textTheme.titleLarge),
-          DropdownButtonFormField<String>(value:leaveTypes.contains(leaveType)?leaveType:null,items:leaveTypes.map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v)=>setState(()=>leaveType=v??''),decoration:const InputDecoration(labelText:'Leave type')),
+          DropdownButtonFormField<String>(initialValue:leaveTypes.contains(leaveType)?leaveType:null,items:leaveTypes.map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v)=>setState(()=>leaveType=v??''),decoration:const InputDecoration(labelText:'Leave type')),
           _field(leaveFrom,'From date (YYYY-MM-DD)'),_field(leaveTo,'To date (YYYY-MM-DD)'),_field(leaveReason,'Reason'),
           FilledButton(onPressed:leaveType.isEmpty||leaveFrom.text.isEmpty||leaveTo.text.isEmpty||leaveReason.text.trim().isEmpty?null:submitLeave,child:const Text('Submit leave request')),
           const Divider(height:30),const Text('Attendance and leave history',style:TextStyle(fontWeight:FontWeight.bold)),
