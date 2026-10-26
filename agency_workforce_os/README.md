@@ -49,7 +49,7 @@ The mobile client includes Frappe username/password login, stores the session id
 - Project and Lead/Opportunity read APIs, Lead creation endpoint and manager-only operational counts.
 - React navigation for Overview, People, Feed, Tasks, EOD, Attendance/Leave, Projects, CRM, WhatsApp inbox, AI Workforce and Management.
 - Flutter login/session shell plus Home, Feed, Tasks, EOD, People, Leave, Projects, CRM and Profile views.
-- Allow-listed agent request and manager approval queue. Approval is recorded, but no agent executes automatically.
+- Allow-listed agent request and manager approval queue. Approval queues read-only deterministic Task/EOD data agents with source DocType, record count and verification timestamp in output; no generative model is used. Unsupported agent adapters fail closed without producing output.
 - WhatsApp webhook challenge/signature verification, inbound conversation/message persistence, deduplicated provider IDs, message-status reconciliation, role-gated inbox API, and queued outbound text replies through the official WhatsApp Cloud API worker. Delivery remains pending until a verified provider status webhook is received.
 - GitHub Actions checks for custom-app Python compilation, DocType JSON, web build and Flutter analysis.
 
@@ -71,7 +71,7 @@ Before production, verify challenge/signature, duplicate webhook, multiple-messa
 ## Important limitations
 This is not a verified production-ready release. No live ERPNext site was available here. CI catches static/build issues but does not replace bench installation, migration, permissions or integration tests against the exact deployed Frappe/ERPNext version.
 
-Still required: full employee administration UI and manager hierarchy; shifts and attendance capture/approval; onboarding/document workflows, appraisals and payroll integration; EOD drafts, task-linked evidence, reminders and notification delivery; feed attachments, bookmarks and moderation; opportunity editing, follow-up schedules, client workspaces and sales-to-delivery handover; WhatsApp templates, retries/backoff, assignment/ownership, retention and monitoring; a reviewed agent execution worker with allow-listed tools, audit and idempotency; push notifications and robust offline queue/sync; comprehensive automated permission/security/integration tests.
+Still required: full employee administration UI and manager hierarchy; shifts and attendance capture/approval; onboarding/document workflows, appraisals and payroll integration; EOD drafts, task-linked evidence, reminders and notification delivery; feed attachments, bookmarks and moderation; opportunity editing, follow-up schedules, client workspaces and sales-to-delivery handover; WhatsApp templates, retries/backoff, assignment/ownership, retention and monitoring; production AI-provider adapters for campaign brief, lead research and project risk review; richer tool-level audit and idempotency; push notifications and robust offline queue/sync; comprehensive automated permission/security/integration tests.
 
 ## No fake data policy
 The UI displays records returned by ERPNext. Missing permissions and unavailable endpoints are errors/unavailable states, never invented employee counts, attendance, lead values, AI results or integration delivery statuses.
