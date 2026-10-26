@@ -30,10 +30,14 @@ def get_workspace():
 
 @frappe.whitelist()
 def list_feed(limit=30):
-    _employee_for_session()
+    employee = _employee_for_session()
+    department = frappe.db.get_value("Employee", employee, "department")
     limit = max(1, min(int(limit or 30), 100))
-    rows = frappe.get_all("Agency Feed Post",
-        filters={"visibility": ["in", ["Company", "Team"]]},
+    # Company posts are broadly visible; Team posts are restricted to the employee's department.
+    filters = [{"visibility": "Company"}]
+    if department:
+        filters.append({"visibility": "Team", "department": department})
+    rows = frappe.get_all("Agency Feed Post", or_filters=filters,
         fields=["name", "owner", "creation", "post_type", "content", "department", "project", "visibility"],
         order_by="creation desc", limit_page_length=limit)
     return [row for row in rows if frappe.has_permission("Agency Feed Post", "read", row.name)]
