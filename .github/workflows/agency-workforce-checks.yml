@@ -1,0 +1,70 @@
+name: Agency Workforce checks
+
+on:
+  pull_request:
+    paths:
+      - "agency_workforce_os/**"
+      - "web/**"
+      - "mobile/**"
+      - ".github/workflows/agency-workforce-checks.yml"
+  push:
+    branches: [main, "feat/**"]
+    paths:
+      - "agency_workforce_os/**"
+      - "web/**"
+      - "mobile/**"
+      - ".github/workflows/agency-workforce-checks.yml"
+
+jobs:
+  python-and-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile custom app Python
+        run: python -m compileall -q agency_workforce_os/agency_workforce_os
+      - name: Validate DocType JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("agency_workforce_os/agency_workforce_os/doctype")
+          files = sorted(root.rglob("*.json"))
+          if not files:
+              raise SystemExit("No DocType JSON files found")
+          for path in files:
+              data = json.loads(path.read_text())
+              assert data.get("doctype") == "DocType", path
+              assert data.get("name"), path
+              assert isinstance(data.get("fields"), list), path
+              print("valid:", path)
+          PY
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run build
+
+  flutter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
