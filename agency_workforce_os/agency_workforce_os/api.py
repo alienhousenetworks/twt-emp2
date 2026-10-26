@@ -382,6 +382,132 @@ def review_agent_run(run, decision, review_notes=""):
         "message": _("Approval recorded. Execution remains unavailable until a reviewed worker is configured.")}
 
 
+def _require_whatsapp_access():
+    allowed = {"System Manager", "HR Manager", "HR User", "Sales Manager", "Sales User"}
+    if not set(frappe.get_roles(frappe.session.user)).intersection(allowed):
+        frappe.throw(_("WhatsApp inbox access is restricted to authorized HR, sales, and system roles."), frappe.PermissionError)
+
+
+def _whatsapp_conversation(phone, name=None):
+    phone = (phone or "").strip()
+    if not phone or len(phone) > 32:
+        return None
+    existing = frappe.db.get_value("Agency WhatsApp Conversation", {"wa_id": phone}, "name")
+    if existing:
+        doc = frappe.get_doc("Agency WhatsApp Conversation", existing)
+        if name and not doc.contact_name:
+            doc.contact_name = name[:140]
+            doc.save(ignore_permissions=True)
+        return doc
+    doc = frappe.get_doc({"doctype": "Agency WhatsApp Conversation", "wa_id": phone,
+        "contact_name": (name or "")[:140], "status": "Open"})
+    doc.insert(ignore_permissions=True)
+    return doc
+
+
+@frappe.whitelist()
+def list_whatsapp_conversations(search=None, limit=50):
+    _employee_for_session()
+    _require_whatsapp_access()
+    filters = {"status": ["!=", "Archived"]}
+    term = "%" + search.strip()[:80] + "%" if search else None
+    or_filters = [{"wa_id": ["like", term]}, {"contact_name": ["like", term]}] if term else None
+    return frappe.get_list("Agency WhatsApp Conversation", filters=filters, or_filters=or_filters,
+        fields=["name", "wa_id", "contact_name", "status", "last_message_at", "last_message_preview", "modified"],
+        order_by="last_message_at desc", limit_page_length=max(1, min(int(limit or 50), 100)))
+
+
+@frappe.whitelist()
+def list_whatsapp_messages(conversation, limit=100):
+    _employee_for_session()
+    _require_whatsapp_access()
+    frappe.get_doc("Agency WhatsApp Conversation", conversation).check_permission("read")
+    return frappe.get_list("Agency WhatsApp Message", filters={"conversation": conversation},
+        fields=["name", "provider_message_id", "direction", "message_type", "text_body", "status",
+                "sent_by", "sent_at", "error_message", "creation"],
+        order_by="creation asc", limit_page_length=max(1, min(int(limit or 100), 200)))
+
+
+@frappe.whitelist(methods=["POST"])
+def send_whatsapp_text(conversation, text_body):
+    _employee_for_session()
+    _require_whatsapp_access()
+    body = (text_body or "").strip()
+    if not body or len(body) > 4096:
+        frappe.throw(_("Message must contain 1–4096 characters."))
+    convo = frappe.get_doc("Agency WhatsApp Conversation", conversation)
+    convo.check_permission("read")
+    if convo.status != "Open":
+        frappe.throw(_("Only open conversations can receive replies."))
+    if not frappe.conf.get("whatsapp_access_token") or not frappe.conf.get("whatsapp_phone_number_id"):
+        frappe.throw(_("WhatsApp outbound credentials are not configured in private site config."))
+    msg = frappe.get_doc({"doctype": "Agency WhatsApp Message", "conversation": convo.name,
+        "direction": "Outbound", "message_type": "text", "text_body": body,
+        "status": "Queued", "sent_by": frappe.session.user})
+    msg.insert()
+    frappe.enqueue("agency_workforce_os.api._send_whatsapp_message", message_name=msg.name,
+        queue="short", enqueue_after_commit=True)
+    return {"name": msg.name, "status": "Queued", "message": _("Message queued; delivery is not yet confirmed.")}
+
+
+def _send_whatsapp_message(message_name):
+    """Background worker for the official WhatsApp Cloud API. Secrets stay in site config."""
+    import requests
+    doc = frappe.get_doc("Agency WhatsApp Message", message_name)
+    if doc.status not in {"Queued", "Failed"} or doc.direction != "Outbound":
+        return
+    token = frappe.conf.get("whatsapp_access_token")
+    phone_number_id = frappe.conf.get("whatsapp_phone_number_id")
+    version = str(frappe.conf.get("whatsapp_graph_api_version") or "v21.0")
+    if not token or not phone_number_id:
+        doc.status = "Failed"
+        doc.error_message = "WhatsApp Cloud API credentials are not configured."
+        doc.save(ignore_permissions=True)
+        return
+    convo = frappe.get_doc("Agency WhatsApp Conversation", doc.conversation)
+    doc.status = "Sending"
+    doc.error_message = None
+    doc.save(ignore_permissions=True)
+    try:
+        response = requests.post(
+            f"https://graph.facebook.com/{version}/{phone_number_id}/messages",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"messaging_product": "whatsapp", "recipient_type": "individual",
+                  "to": convo.wa_id, "type": "text", "text": {"preview_url": False, "body": doc.text_body}},
+            timeout=(5, 20))
+        payload = response.json() if response.content else {}
+        if not response.ok:
+            raise RuntimeError(f"WhatsApp API HTTP {response.status_code}: {json.dumps(payload)[:1500]}")
+        provider_id = ((payload.get("messages") or [{}])[0]).get("id")
+        if not provider_id:
+            raise RuntimeError("WhatsApp API response did not include a provider message ID.")
+        doc.provider_message_id = provider_id
+        doc.status = "Sent"
+        doc.error_message = None
+        doc.save(ignore_permissions=True)
+        convo.last_message_at = now_datetime()
+        convo.last_message_preview = doc.text_body[:240]
+        convo.save(ignore_permissions=True)
+    except Exception as exc:
+        doc.status = "Failed"
+        doc.error_message = str(exc)[:2000]
+        doc.save(ignore_permissions=True)
+        frappe.log_error(title="WhatsApp message delivery failed", message=f"{message_name}: {str(exc)[:2000]}")
+
+
+@frappe.whitelist(methods=["POST"])
+def set_whatsapp_conversation_status(conversation, status):
+    _employee_for_session()
+    _require_whatsapp_access()
+    if status not in {"Open", "Closed", "Archived"}:
+        frappe.throw(_("Unsupported conversation status."))
+    doc = frappe.get_doc("Agency WhatsApp Conversation", conversation)
+    doc.check_permission("write")
+    doc.status = status
+    doc.save()
+    return {"name": doc.name, "status": doc.status}
+
+
 @frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
 def whatsapp_webhook():
     """Verify Meta's challenge/signature and persist events idempotently.
@@ -418,16 +544,52 @@ def whatsapp_webhook():
     if not isinstance(payload, dict) or len(raw) > 1024 * 1024:
         frappe.local.response["http_status_code"] = 413 if len(raw) > 1024 * 1024 else 400
         return {"error": "Payload must be a JSON object under 1 MB"}
-    messages = (((payload.get("entry") or [{}])[0].get("changes") or [{}])[0].get("value") or {}).get("messages") or []
-    statuses = (((payload.get("entry") or [{}])[0].get("changes") or [{}])[0].get("value") or {}).get("statuses") or []
-    provider_id = (messages[0].get("id") if messages else None) or (statuses[0].get("id") if statuses else None)
-    event_key = str(provider_id or hashlib.sha256(raw).hexdigest())
-    if frappe.db.exists("Agency WhatsApp Event", {"event_key": event_key}):
-        return {"accepted": True, "duplicate": True}
-    event = frappe.get_doc({"doctype": "Agency WhatsApp Event", "event_key": event_key,
-        "provider_message_id": provider_id, "event_type": "message" if messages else "status" if statuses else "other",
-        "payload_json": json.dumps(payload, ensure_ascii=False), "processing_status": "Received",
-        "received_at": now_datetime()})
-    event.insert(ignore_permissions=True)
+    changes = [change for entry in (payload.get("entry") or []) for change in (entry.get("changes") or [])]
+    values = [change.get("value") or {} for change in changes]
+    messages = [message for value in values for message in (value.get("messages") or [])]
+    statuses = [status for value in values for status in (value.get("statuses") or [])]
+    event_key = hashlib.sha256(raw).hexdigest()
+    duplicate = bool(frappe.db.exists("Agency WhatsApp Event", {"event_key": event_key}))
+    if not duplicate:
+        event = frappe.get_doc({"doctype": "Agency WhatsApp Event", "event_key": event_key,
+            "provider_message_id": (messages[0].get("id") if messages else None) or (statuses[0].get("id") if statuses else None),
+            "event_type": "message" if messages else "status" if statuses else "other",
+            "payload_json": json.dumps(payload, ensure_ascii=False), "processing_status": "Received",
+            "received_at": now_datetime()})
+        event.insert(ignore_permissions=True)
+    contacts = {contact.get("wa_id"): contact.get("profile", {}).get("name")
+                for value in values for contact in (value.get("contacts") or [])}
+    stored_messages = 0
+    for incoming in messages:
+        provider_id = incoming.get("id")
+        sender = incoming.get("from")
+        if not provider_id or not sender or frappe.db.exists("Agency WhatsApp Message", {"provider_message_id": provider_id}):
+            continue
+        convo = _whatsapp_conversation(sender, contacts.get(sender))
+        if not convo:
+            continue
+        text_body = (incoming.get("text") or {}).get("body") or ""
+        msg = frappe.get_doc({"doctype": "Agency WhatsApp Message", "conversation": convo.name,
+            "provider_message_id": provider_id, "direction": "Inbound",
+            "message_type": incoming.get("type") or "unknown", "text_body": text_body[:4096],
+            "status": "Received", "sent_at": now_datetime()})
+        msg.insert(ignore_permissions=True)
+        convo.last_message_at = now_datetime()
+        convo.last_message_preview = (text_body or f"[{incoming.get('type') or 'message'}]")[:240]
+        convo.save(ignore_permissions=True)
+        stored_messages += 1
+    for state in statuses:
+        provider_id = state.get("id")
+        if not provider_id:
+            continue
+        msg_name = frappe.db.get_value("Agency WhatsApp Message", {"provider_message_id": provider_id}, "name")
+        if msg_name:
+            msg = frappe.get_doc("Agency WhatsApp Message", msg_name)
+            state_map = {"sent": "Sent", "delivered": "Delivered", "read": "Read", "failed": "Failed"}
+            msg.status = state_map.get(state.get("status"), msg.status)
+            errors = state.get("errors") or []
+            if errors:
+                msg.error_message = json.dumps(errors, ensure_ascii=False)[:2000]
+            msg.save(ignore_permissions=True)
     frappe.db.commit()
-    return {"accepted": True, "duplicate": False, "event": event.name}
+    return {"accepted": True, "duplicate": duplicate, "stored_messages": stored_messages}

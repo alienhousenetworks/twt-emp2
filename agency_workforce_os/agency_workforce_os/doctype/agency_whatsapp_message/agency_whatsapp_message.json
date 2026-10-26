@@ -1,0 +1,105 @@
+{
+  "doctype": "DocType",
+  "name": "Agency WhatsApp Message",
+  "module": "Agency Workforce OS",
+  "autoname": "hash",
+  "track_changes": 1,
+  "fields": [
+    {
+      "fieldname": "conversation",
+      "label": "Conversation",
+      "fieldtype": "Link",
+      "options": "Agency WhatsApp Conversation",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "provider_message_id",
+      "label": "Provider Message ID",
+      "fieldtype": "Data",
+      "unique": 1
+    },
+    {
+      "fieldname": "direction",
+      "label": "Direction",
+      "fieldtype": "Select",
+      "options": "Inbound\nOutbound",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "message_type",
+      "label": "Message Type",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "text_body",
+      "label": "Message Text",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "status",
+      "label": "Status",
+      "fieldtype": "Select",
+      "options": "Queued\nSending\nSent\nDelivered\nRead\nReceived\nFailed",
+      "default": "Received",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "sent_by",
+      "label": "Sent By",
+      "fieldtype": "Link",
+      "options": "User"
+    },
+    {
+      "fieldname": "sent_at",
+      "label": "Provider Timestamp",
+      "fieldtype": "Datetime"
+    },
+    {
+      "fieldname": "error_message",
+      "label": "Error Message",
+      "fieldtype": "Small Text"
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "HR Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "Sales User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "HR User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    }
+  ]
+}
