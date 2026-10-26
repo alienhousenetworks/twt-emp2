@@ -1,0 +1,16 @@
+{
+ "doctype":"DocType","name":"Agency Feed Post","module":"Agency Workforce OS","autoname":"hash","title_field":"content","track_changes":1,
+ "fields":[
+  {"fieldname":"employee","label":"Employee","fieldtype":"Link","options":"Employee","reqd":1,"in_list_view":1},
+  {"fieldname":"post_type","label":"Post Type","fieldtype":"Select","options":"General Update\nProgress Update\nHelp Request\nAchievement\nEOD Report\nQuestion\nBlocker","reqd":1,"in_list_view":1},
+  {"fieldname":"content","label":"Content","fieldtype":"Long Text","reqd":1},
+  {"fieldname":"visibility","label":"Visibility","fieldtype":"Select","options":"Private\nTeam\nCompany","default":"Team","reqd":1,"in_list_view":1},
+  {"fieldname":"department","label":"Department","fieldtype":"Link","options":"Department"},
+  {"fieldname":"project","label":"Project","fieldtype":"Link","options":"Project"}
+ ],
+ "permissions":[
+  {"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"share":1},
+  {"role":"Agency Employee","read":1,"write":1,"create":1,"delete":0},
+  {"role":"Employee","read":1,"write":0,"create":0,"delete":0}
+ ]
+}
