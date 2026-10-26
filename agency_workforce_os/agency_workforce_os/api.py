@@ -361,7 +361,7 @@ def list_agent_runs(limit=50):
     filters = {} if _is_manager() else {"requested_by": frappe.session.user}
     return frappe.get_list("Agency Agent Run", filters=filters,
         fields=["name", "requested_by", "employee", "agent_key", "purpose", "status", "creation",
-                "approved_by", "approved_at", "started_at", "finished_at", "error_message"],
+                "approved_by", "approved_at", "started_at", "finished_at", "error_message", "output_json"],
         order_by="creation desc", limit_page_length=max(1, min(int(limit or 50), 100)))
 
 
@@ -378,9 +378,53 @@ def review_agent_run(run, decision, review_notes=""):
     doc.approved_at = now_datetime()
     doc.review_notes = (review_notes or "").strip()[:4000]
     doc.save()
+    if decision == "Approve":
+        frappe.enqueue("agency_workforce_os.api.execute_approved_agent_run", run_name=doc.name,
+            queue="short", enqueue_after_commit=True)
     return {"name": doc.name, "status": doc.status,
-        "message": _("Approval recorded. Execution remains unavailable until a reviewed worker is configured.")}
+        "message": _("Approval recorded. Supported read-only data agents are queued; unsupported adapters fail closed.")}
 
+
+def execute_approved_agent_run(run_name):
+    """Execute only explicitly approved, read-only data agents; no external side effects."""
+    doc = frappe.get_doc("Agency Agent Run", run_name)
+    if doc.status != "Approved" or doc.agent_key not in AGENT_ALLOWLIST:
+        return
+    doc.status = "Running"
+    doc.started_at = now_datetime()
+    doc.error_message = None
+    doc.save(ignore_permissions=True)
+    try:
+        input_data = json.loads(doc.input_json or "{}")
+        if doc.agent_key == "task_summarizer":
+            tasks = frappe.get_list("Task",
+                filters={"_assign": ["like", "%" + doc.requested_by + "%"]},
+                fields=["name", "subject", "status", "priority", "exp_end_date", "project"],
+                order_by="modified desc", limit_page_length=100)
+            output = {"agent_key": doc.agent_key, "execution_mode": "deterministic_data_agent",
+                "source_doctype": "Task", "record_count": len(tasks), "records": tasks,
+                "input": input_data, "verified_at": str(now_datetime()),
+                "limitations": "Read-only ERPNext data summary; no generative model was used."}
+        elif doc.agent_key == "eod_assistant":
+            reports = frappe.get_list("Agency EOD Report", filters={"employee": doc.employee},
+                fields=["name", "report_date", "status", "completed_work", "pending_work", "blockers", "next_day_plan", "help_needed"],
+                order_by="report_date desc", limit_page_length=1)
+            output = {"agent_key": doc.agent_key, "execution_mode": "deterministic_data_agent",
+                "source_doctype": "Agency EOD Report", "record_count": len(reports), "records": reports,
+                "input": input_data, "verified_at": str(now_datetime()),
+                "limitations": "Read-only EOD context; no generative model was used."}
+        else:
+            raise NotImplementedError("No reviewed execution adapter is configured for this agent key; no output was generated.")
+        doc.output_json = frappe.as_json(output)
+        doc.status = "Completed"
+    except Exception as exc:
+        doc.status = "Failed"
+        doc.error_message = str(exc)[:2000]
+        doc.output_json = None
+        frappe.log_error(title="Agency agent run failed", message=f"{run_name}: {str(exc)[:2000]}")
+    finally:
+        doc.finished_at = now_datetime()
+        doc.save(ignore_permissions=True)
 
 def _require_whatsapp_access():
     allowed = {"System Manager", "HR Manager", "HR User", "Sales Manager", "Sales User"}
