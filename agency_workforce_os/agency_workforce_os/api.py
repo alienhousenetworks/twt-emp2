@@ -42,7 +42,7 @@ def get_workspace():
     return {"employee": {"name": emp.name, "employee_name": emp.employee_name,
         "department": emp.department, "designation": emp.designation, "company": emp.company,
         "image": emp.image}, "tasks": tasks, "feed": list_feed(limit=20),
-        "data_status": "available", "generated_at": now_datetime()}
+        "data_status": "available", "generated_at": now_datetime(), "permissions": {"can_manage": _is_manager()}}
 
 
 @frappe.whitelist()
