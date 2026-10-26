@@ -268,14 +268,14 @@ def list_my_leave(limit=50):
     employee = _employee_for_session()
     return frappe.get_list("Leave Application", filters={"employee": employee},
         fields=["name", "leave_type", "from_date", "to_date", "total_leave_days", "status", "docstatus"],
-        order_by="from_date desc", limit_page_length=max(1, min(int(limit or 50), 100))
+        order_by="from_date desc", limit_page_length=max(1, min(int(limit or 50), 100)))
 
 
 @frappe.whitelist()
 def list_projects(limit=50):
     _employee_for_session()
     return frappe.get_list("Project", fields=["name", "project_name", "status", "percent_complete", "expected_end_date", "project_manager"],
-        order_by="modified desc", limit_page_length=max(1, min(int(limit or 50), 100))
+        order_by="modified desc", limit_page_length=max(1, min(int(limit or 50), 100)))
 
 
 @frappe.whitelist()
@@ -291,7 +291,7 @@ def list_crm_records(doctype="Lead", search=None, limit=50):
         field = "lead_name" if doctype == "Lead" else "party_name"
         filters[field] = ["like", "%" + search.strip()[:100] + "%"]
     return frappe.get_list(doctype, filters=filters, fields=fields, order_by="modified desc",
-        limit_page_length=max(1, min(int(limit or 50), 100))
+        limit_page_length=max(1, min(int(limit or 50), 100)))
 
 
 @frappe.whitelist(methods=["POST"])
