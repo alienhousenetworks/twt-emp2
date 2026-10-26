@@ -1,0 +1,86 @@
+{
+  "doctype": "DocType",
+  "name": "Agency WhatsApp Conversation",
+  "module": "Agency Workforce OS",
+  "autoname": "hash",
+  "track_changes": 1,
+  "fields": [
+    {
+      "fieldname": "wa_id",
+      "label": "WhatsApp ID / Phone",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "unique": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "contact_name",
+      "label": "Contact Name",
+      "fieldtype": "Data",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "status",
+      "label": "Status",
+      "fieldtype": "Select",
+      "options": "Open\nClosed\nArchived",
+      "default": "Open",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "last_message_at",
+      "label": "Last Message At",
+      "fieldtype": "Datetime",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "last_message_preview",
+      "label": "Last Message Preview",
+      "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "assigned_to",
+      "label": "Assigned To",
+      "fieldtype": "Link",
+      "options": "User"
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "HR Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "Sales User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    },
+    {
+      "role": "HR User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 0
+    }
+  ]
+}
