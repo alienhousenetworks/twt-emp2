@@ -1,5 +1,8 @@
 """Agency Workforce OS APIs layered on ERPNext/Frappe; ERPNext remains the source of truth."""
 import frappe
+import hashlib
+import hmac
+import json
 from frappe import _
 from frappe.utils import getdate, now_datetime
 
@@ -326,3 +329,105 @@ def get_management_overview():
 def list_leave_types():
     _employee_for_session()
     return frappe.get_list("Leave Type", fields=["name"], order_by="name asc", limit_page_length=100)
+
+
+AGENT_ALLOWLIST = {"task_summarizer", "eod_assistant", "campaign_brief", "lead_research", "project_risk_review"}
+
+
+@frappe.whitelist(methods=["POST"])
+def request_agent_run(agent_key, purpose, input_json="{}"):
+    employee = _employee_for_session()
+    if agent_key not in AGENT_ALLOWLIST:
+        frappe.throw(_("Agent is not in the approved registry."))
+    purpose = (purpose or "").strip()
+    if not purpose or len(purpose) > 1000:
+        frappe.throw(_("Provide a short purpose (maximum 1000 characters)."))
+    try:
+        payload = json.loads(input_json or "{}") if isinstance(input_json, str) else input_json
+    except (TypeError, ValueError):
+        frappe.throw(_("Input must be valid JSON."))
+    if not isinstance(payload, dict) or len(frappe.as_json(payload)) > 20000:
+        frappe.throw(_("Agent input must be a JSON object under 20 KB."))
+    doc = frappe.get_doc({"doctype": "Agency Agent Run", "requested_by": frappe.session.user,
+        "employee": employee, "agent_key": agent_key, "purpose": purpose,
+        "input_json": frappe.as_json(payload), "status": "Pending Approval"})
+    doc.insert()
+    return {"name": doc.name, "status": doc.status, "message": _("Queued for human approval; no agent has executed yet.")}
+
+
+@frappe.whitelist()
+def list_agent_runs(limit=50):
+    employee = _employee_for_session()
+    filters = {} if _is_manager() else {"requested_by": frappe.session.user}
+    return frappe.get_list("Agency Agent Run", filters=filters,
+        fields=["name", "requested_by", "employee", "agent_key", "purpose", "status", "creation",
+                "approved_by", "approved_at", "started_at", "finished_at", "error_message"],
+        order_by="creation desc", limit_page_length=max(1, min(int(limit or 50), 100)))
+
+
+@frappe.whitelist(methods=["POST"])
+def review_agent_run(run, decision, review_notes=""):
+    _require_manager()
+    if decision not in {"Approve", "Reject"}:
+        frappe.throw(_("Decision must be Approve or Reject."))
+    doc = frappe.get_doc("Agency Agent Run", run)
+    if doc.status != "Pending Approval":
+        frappe.throw(_("Only pending agent requests can be reviewed."))
+    doc.status = "Approved" if decision == "Approve" else "Rejected"
+    doc.approved_by = frappe.session.user
+    doc.approved_at = now_datetime()
+    doc.review_notes = (review_notes or "").strip()[:4000]
+    doc.save()
+    return {"name": doc.name, "status": doc.status,
+        "message": _("Approval recorded. Execution remains unavailable until a reviewed worker is configured.")}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
+def whatsapp_webhook():
+    """Verify Meta's challenge/signature and persist events idempotently.
+
+    Configure whatsapp_verify_token and whatsapp_app_secret in the site's private
+    config. This endpoint stores inbound events; it does not send messages or
+    claim delivery until an inbox worker and WhatsApp credentials are configured.
+    """
+    if frappe.request.method == "GET":
+        verify_token = frappe.conf.get("whatsapp_verify_token")
+        mode = frappe.form_dict.get("hub.mode")
+        token = frappe.form_dict.get("hub.verify_token")
+        challenge = frappe.form_dict.get("hub.challenge")
+        if not verify_token or mode != "subscribe" or not hmac.compare_digest(str(token or ""), str(verify_token)):
+            frappe.local.response["http_status_code"] = 403
+            return {"error": "Webhook verification failed"}
+        frappe.local.response["type"] = "text"
+        return str(challenge or "")
+    secret = frappe.conf.get("whatsapp_app_secret")
+    signature = frappe.get_request_header("X-Hub-Signature-256") or ""
+    raw = frappe.request.get_data() or b""
+    if not secret or not signature.startswith("sha256="):
+        frappe.local.response["http_status_code"] = 403
+        return {"error": "Webhook signature configuration missing or invalid"}
+    expected = "sha256=" + hmac.new(str(secret).encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        frappe.local.response["http_status_code"] = 403
+        return {"error": "Webhook signature invalid"}
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        frappe.local.response["http_status_code"] = 400
+        return {"error": "Invalid JSON payload"}
+    if not isinstance(payload, dict) or len(raw) > 1024 * 1024:
+        frappe.local.response["http_status_code"] = 413 if len(raw) > 1024 * 1024 else 400
+        return {"error": "Payload must be a JSON object under 1 MB"}
+    messages = (((payload.get("entry") or [{}])[0].get("changes") or [{}])[0].get("value") or {}).get("messages") or []
+    statuses = (((payload.get("entry") or [{}])[0].get("changes") or [{}])[0].get("value") or {}).get("statuses") or []
+    provider_id = (messages[0].get("id") if messages else None) or (statuses[0].get("id") if statuses else None)
+    event_key = str(provider_id or hashlib.sha256(raw).hexdigest())
+    if frappe.db.exists("Agency WhatsApp Event", {"event_key": event_key}):
+        return {"accepted": True, "duplicate": True}
+    event = frappe.get_doc({"doctype": "Agency WhatsApp Event", "event_key": event_key,
+        "provider_message_id": provider_id, "event_type": "message" if messages else "status" if statuses else "other",
+        "payload_json": json.dumps(payload, ensure_ascii=False), "processing_status": "Received",
+        "received_at": now_datetime()})
+    event.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"accepted": True, "duplicate": False, "event": event.name}
