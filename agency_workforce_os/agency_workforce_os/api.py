@@ -320,3 +320,9 @@ def get_management_overview():
         "leave_open": frappe.db.count("Leave Application", {"status": "Open", "docstatus": 0}),
         "leads_open": frappe.db.count("Lead", {"status": ["not in", ["Converted", "Do Not Contact"]]}),
         "as_of": str(getdate()), "data_status": "live_database_counts"}
+
+
+@frappe.whitelist()
+def list_leave_types():
+    _employee_for_session()
+    return frappe.get_list("Leave Type", filters={"is_active": "Yes"}, fields=["name"], order_by="name asc", limit_page_length=100)
